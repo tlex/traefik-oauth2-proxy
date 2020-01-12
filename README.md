@@ -1,4 +1,4 @@
-# Configure traefik and oauth2_proxy without configuration files
+# Use docker-compose to deploy Prometheus, Grafana, Portainer behind Traefik cloud native edge router, all protected by oauth2_proxy
 
 ## Usage
 
@@ -19,4 +19,4 @@ sudo docker-compose up --remove-orphans
 
 ## Details
 
-For deatils, see the blog entry: [alex.thom.ae/2020/01/11/configure-traefik-oauth2_proxy-traefik](https://alex.thom.ae/2020/01/11/configure-traefik-oauth2_proxy-traefik/)
+For deatils, see the blog entry: [alex.thom.ae/2020/01/12/configure-traefik-oauth2_proxy-docker-compose-prometheus-grafana/](https://alex.thom.ae/2020/01/12/configure-traefik-oauth2_proxy-docker-compose-prometheus-grafana/)
