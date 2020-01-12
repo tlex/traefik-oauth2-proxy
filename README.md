@@ -5,7 +5,6 @@
 ```sh
 git clone https://github.com/tlex/traefik-oauth2-proxy.git demo
 cd demo
-bash ./create-folders.sh
 cp .env.example .env
 ```
 
