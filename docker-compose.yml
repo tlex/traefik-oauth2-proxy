@@ -1,0 +1,196 @@
+version: "3.7"
+
+services:
+  traefik:
+    image: traefik:${TRAEFIK_VERSION}
+    restart: unless-stopped
+    labels:
+      traefik.enable: 'true'
+      traefik.http.middlewares.default-compress.compress: 'true'
+      traefik.http.middlewares.default-http.redirectScheme.scheme: https
+      traefik.http.middlewares.default-http.redirectScheme.permanent: 'true'
+      traefik.http.middlewares.default-https.chain.middlewares: default-compress
+      traefik.http.routers.default-redirect.entrypoints: http
+      traefik.http.routers.default-redirect.middlewares: default-http
+      traefik.http.routers.default-redirect.rule: "HostRegexp(`{any:.*}`)"
+      traefik.http.routers.traefik.entrypoints: https
+      traefik.http.routers.traefik.middlewares: oauth-signin,oauth-verify,default-https
+      traefik.http.routers.traefik.rule: "Host(`traefik.${DOMAIN?err}`) && PathPrefix(`/api`, `/dashboard`)"
+      traefik.http.routers.traefik.tls.certResolver: 'default'
+      traefik.http.routers.traefik.service: api@internal
+      traefik.http.services.traefik.loadbalancer.server.port: '80'
+    ports:
+      - target: 80
+        published: 80
+        protocol: tcp
+        mode: host
+      - target: 443
+        published: 443
+        protocol: tcp
+        mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./folders/traefik:/etc/traefik/acme
+    environment:
+      CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN?err}
+      CF_ZONE_API_TOKEN: ${CF_ZONE_API_TOKEN?err}
+    command:
+      - --accesslog=true
+      - --accesslog.fields.defaultmode=keep
+      - --accesslog.fields.headers.defaultmode=keep
+      - --api.dashboard=true
+      - --api.insecure=true
+      # For the example only. Remove it for production!
+      - --certificatesResolvers.default.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory
+      - --certificatesResolvers.default.acme.dnsChallenge.provider=cloudflare
+      - --certificatesResolvers.default.acme.dnsChallenge.resolvers=1.1.1.1:53,1.0.0.1:53
+      - --certificatesResolvers.default.acme.storage=/etc/traefik/acme/acme.json
+      - --entrypoints.http.address=:80
+      - --entrypoints.https.address=:443
+      - --log.level=INFO
+      - --metrics.prometheus=true
+      - --providers.docker.endpoint=unix:///var/run/docker.sock
+      - --providers.docker.defaultRule=Host(`{{ index .Labels "ai.ix.fqdn"}}`)
+      - --providers.docker.exposedByDefault=false
+  oauth:
+    image: quay.io/pusher/oauth2_proxy:${OAUTH2_PROXY_VERSION}
+    restart: unless-stopped
+    labels:
+      ai.ix.expose: 'true'
+      traefik.enable: 'true'
+      traefik.http.middlewares.oauth-verify.forwardAuth.address: http://oauth:4180/oauth2/auth
+      traefik.http.middlewares.oauth-verify.forwardAuth.trustForwardHeader: 'true'
+      traefik.http.middlewares.oauth-verify.forwardAuth.authResponseHeaders: X-Auth-Request-User,X-Auth-Request-Email,Set-Cookie
+      traefik.http.middlewares.oauth-signin.errors.service: oauth@docker
+      traefik.http.middlewares.oauth-signin.errors.status: '401'
+      traefik.http.middlewares.oauth-signin.errors.query: /oauth2/sign_in
+      traefik.http.routers.oauth.entrypoints: https
+      traefik.http.routers.oauth.rule: Host(`oauth.${DOMAIN?err}`) || PathPrefix(`/oauth2`)
+      traefik.http.routers.oauth.tls.certResolver: 'default'
+      traefik.http.routers.oauth.service: oauth@docker
+      traefik.http.services.oauth.loadbalancer.server.port: '4180'
+    environment:
+      OAUTH2_PROXY_CLIENT_ID: '${OAUTH2_PROXY_CLIENT_ID?err}'
+      OAUTH2_PROXY_CLIENT_SECRET: '${OAUTH2_PROXY_CLIENT_SECRET?err}'
+      OAUTH2_PROXY_COOKIE_DOMAIN: '.${DOMAIN?err}'
+      OAUTH2_PROXY_COOKIE_REFRESH: '1h'
+      OAUTH2_PROXY_COOKIE_SECURE: 'true'
+      OAUTH2_PROXY_COOKIE_SECRET: '${OAUTH2_PROXY_COOKIE_SECRET?err}'
+      OAUTH2_PROXY_EMAIL_DOMAINS: '*'
+      OAUTH2_PROXY_FOOTER: '-'
+      OAUTH2_PROXY_HTTP_ADDRESS: '0.0.0.0:4180'
+      OAUTH2_PROXY_PASS_BASIC_AUTH: 'false'
+      OAUTH2_PROXY_PASS_USER_HEADERS: 'true'
+      OAUTH2_PROXY_PROVIDER: 'google'
+      OAUTH2_PROXY_SET_AUTHORIZATION_HEADER: 'true'
+      OAUTH2_PROXY_SET_XAUTHREQUEST: 'true'
+      OAUTH2_PROXY_WHITELIST_DOMAIN: '.${DOMAIN?err}'
+  portainer:
+    image: portainer/portainer:${PORTAINER_VERSION}
+    restart: unless-stopped
+    depends_on:
+      - portainer-agent
+    labels:
+      ai.ix.fqdn: 'portainer.${DOMAIN?err}'
+      traefik.enable: 'true'
+      traefik.http.routers.portainer.entrypoints: https
+      traefik.http.routers.portainer.middlewares: oauth-signin,oauth-verify,default-https
+      traefik.http.routers.portainer.tls.certResolver: 'default'
+      traefik.http.services.portainer.loadbalancer.server.port: '9000'
+    volumes:
+      - './folders/portainer:/data:rw'
+    command: --no-analytics --no-auth
+  portainer-agent:
+    image: portainer/agent:${PORTAINER_AGENT_VERSION}
+    restart: unless-stopped
+    environment:
+      AGENT_CLUSTER_ADDR: tasks.portainer_agent
+      CAP_HOST_MANAGEMENT: '1'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+      - /:/host
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_VERSION}
+    restart: unless-stopped
+    labels:
+      ai.ix.fqdn: 'prometheus.${DOMAIN?err}'
+      traefik.enable: 'true'
+      traefik.http.routers.prometheus.entrypoints: https
+      traefik.http.routers.prometheus.middlewares: oauth-signin,oauth-verify,default-https
+      traefik.http.routers.prometheus.tls.certResolver: 'default'
+      traefik.http.services.prometheus.loadbalancer.server.port: '9090'
+    secrets:
+      - prometheus.yml
+    volumes:
+      - './folders/prometheus:/data:rw'
+    user: '99:99'
+    ulimits:
+      nofile:
+        soft: 200000
+        hard: 200000
+    command: |
+        --config.file=/run/secrets/prometheus.yml
+        --web.enable-admin-api
+        --web.external-url=https://prometheus.${DOMAIN?err}
+        --storage.tsdb.path=/data
+        --storage.tsdb.retention.time=30d
+  grafana-db:
+    image: mysql:${MYSQL_VERSION}
+    restart: unless-stopped
+    volumes:
+      - './folders/grafana-db:/var/lib/mysql:rw'
+    environment:
+      MYSQL_USER: '${MYSQL_USER?err}'
+      MYSQL_DATABASE: '${MYSQL_DATABASE?err}'
+      MYSQL_PASSWORD: '${MYSQL_PASSWORD?err}'
+      MYSQL_ROOT_PASSWORD: '${MYSQL_ROOT_PASSWORD?err}'
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION}
+    restart: unless-stopped
+    depends_on:
+      - grafana-db
+    labels:
+      ai.ix.fqdn: 'grafana.${DOMAIN?err}'
+      traefik.enable: 'true'
+      traefik.http.routers.grafana.entrypoints: https
+      traefik.http.routers.grafana.middlewares: oauth-signin,oauth-verify,default-https
+      traefik.http.routers.grafana.tls.certResolver: 'default'
+      traefik.http.services.grafana.loadbalancer.server.port: '3000'
+    environment:
+      GF_ALERTING_EXECUTE_ALERTS: 'true'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_AUTH_PROXY_ENABLED: 'true'
+      GF_AUTH_PROXY_HEADER_NAME: 'X-Auth-Request-User'
+      GF_AUTH_PROXY_HEADER_PROPERTY: username
+      GF_AUTH_PROXY_AUTO_SIGN_UP: 'true'
+      GF_AUTH_PROXY_HEADERS: 'Email:X-Auth-Request-Email'
+      GF_AUTH_PROXY_ENABLE_LOGIN_TOKEN: 'true'
+      GF_AUTH_DISABLE_LOGIN_FORM: 'true'
+      GF_AUTH_DISABLE_SIGNOUT_MENU: 'true'
+      GF_DATABASE_HOST: 'grafana-db:3306'
+      GF_DATABASE_NAME: 'grafana'
+      GF_DATABASE_TYPE: mysql
+      GF_DATABASE_PASSWORD: '${MYSQL_PASSWORD?err}'
+      GF_DATABASE_USER: '${MYSQL_USER?err}'
+      GF_EXPLORE_ENABLED: 'true'
+      # These are the plugins I use. Feel free to modify the list
+      #GF_INSTALL_PLUGINS: grafana-piechart-panel,natel-plotly-panel,grafana-clock-panel,camptocamp-prometheus-alertmanager-datasource,briangann-datatable-panel,grafana-worldmap-panel
+      GF_LOG_LEVEL: info
+      GF_LOGIN_COOKIE_NAME: grafana_cheese_cake
+      GF_SECURITY_COOKIE_SECURE: 'true'
+      GF_SECURITY_SECRET_KEY: ${GF_SECURITY_SECRET_KEY?err}
+      GF_SERVER_DOMAIN: 'grafana.${DOMAIN?err}'
+      GF_SERVER_ENFORCE_DOMAIN: 'true'
+      GF_SERVER_ROOT_URL: https://%(domain)s/
+      GF_SERVER_ROUTER_LOGGING: 'true'
+      GF_SESSION_LIFE_TIME: 86400
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_USERS_AUTO_ASSIGN_ORG: 'true'
+      GF_USERS_AUTO_ASSIGN_ORG_ROLE: 'Admin'
+      # see https://github.com/grafana/grafana/issues/20096
+      GODEBUG: netdns=go
+secrets:
+  prometheus.yml:
+    file: ./prometheus.yml
