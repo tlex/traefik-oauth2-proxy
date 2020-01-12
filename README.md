@@ -19,4 +19,4 @@ sudo docker-compose up --remove-orphans
 
 ## Details
 
-For deatils, see the blog entry: [alex.thom.ae/2020/01/12/configure-traefik-oauth2_proxy-docker-compose-prometheus-grafana/](https://alex.thom.ae/2020/01/12/configure-traefik-oauth2_proxy-docker-compose-prometheus-grafana/)
+For deatils, see the blog entry: [alex.thom.ae/2020/01/12/deploy-traefik-prometheus-grafana-oauth2_proxy-docker-compose/](https://alex.thom.ae/2020/01/12/deploy-traefik-prometheus-grafana-oauth2_proxy-docker-compose/)
