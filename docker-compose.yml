@@ -13,6 +13,7 @@ services:
       traefik.http.routers.default-redirect.entrypoints: http
       traefik.http.routers.default-redirect.middlewares: default-http
       traefik.http.routers.default-redirect.rule: "HostRegexp(`{any:.*}`)"
+      traefik.http.routers.default-redirect.service: noop@internal
       traefik.http.routers.traefik.entrypoints: https
       traefik.http.routers.traefik.middlewares: oauth-signin,oauth-verify,default-https
       traefik.http.routers.traefik.rule: "Host(`traefik.${DOMAIN?err}`) && PathPrefix(`/api`, `/dashboard`)"
